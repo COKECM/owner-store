@@ -1,0 +1,24 @@
+﻿name: DeepSeek V4P Code Review
+on:
+  pull_request:
+    branches: [ "master" ]
+    types: [opened, synchronize, reopened]
+jobs:
+  deepseek-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run DeepSeek V4P Review
+        uses: stwise/ai-code-review@v1
+        with:
+          openai_api_key: ${{ secrets.DEEPSEEK_API_KEY }}
+          openai_api_base: "https://api.deepseek.com/v1"
+          model: "deepseek-v4-pro"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          persona: "你是一个拥有15年经验、眼神犀利的资深前端技术专家。请使用中文，针对这段代码改动提出深度的 Code Review 意见。如果发现逻辑漏洞、Shopify 规范冲突或性能隐患，请直接指出并给出修改后的代码示例。"
