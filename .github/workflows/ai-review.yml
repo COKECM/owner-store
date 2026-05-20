@@ -20,21 +20,18 @@ jobs:
 
       - name: Get PR Diff & Call DeepSeek
         env:
-          # 读取你的 GitHub 密钥和公司 Token
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 1. 抓取这次 PR 改动了哪些代码
+          # 1. 抓取改动代码
           git diff origin/master...HEAD > pr_diff.txt
           
-          # 如果没有改动，就直接退出
           if [ ! -s pr_diff.txt ]; then
             echo "No code changes found."
             exit 0
           fi
 
-          # 2. 用 cURL 按照 Anthropic 格式直接呼叫你们公司的接口
-          # 这里把代码 diff 作为输入直接喂给 DeepSeek V4P
+          # 2. 呼叫接口
           RESPONSE=$(curl -s -X POST "https://api.deepseek.com/anthropic/v1/messages" \
             -H "x-api-key: $DEEPSEEK_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
@@ -45,15 +42,24 @@ jobs:
               "messages": [
                 {
                   "role": "user",
-                  "content": "你是一个拥有15年经验、眼神犀利的资深前端技术专家。请使用中文，针对以下代码改动(Git Diff)提出深度的 Code Review 意见。如果发现逻辑漏洞、Shopify 规范冲突或性能隐患，请直接指出并给出修改后的代码示例：\n\n'"$(cat pr_diff.txt | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')_PRICE_PLACEHOLDER_"'"
+                  "content": "你是一个拥有15年经验的前端架构师。请用中文针对以下代码改动提出 Code Review 意见：\n\n'"$(cat pr_diff.txt | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')_PRICE_PLACEHOLDER_"'"
                 }
               ]
             }')
 
-          # 提取 AI 返回的评论文本
-          AI_COMMENT=$(echo "$RESPONSE" | jq -r '.content[0].text')
+          # 🚨 【核心 Debug 行】直接把原始返回打印到控制台，供我们肉眼查看
+          echo "================ 接口返回原始数据 ================"
+          echo "$RESPONSE"
+          echo "=================================================="
 
-          # 3. 将 AI 的审查意见作为评论直接发表在当前 PR 页面上
+          # 3. 解析并发表评论
+          AI_COMMENT=$(echo "$RESPONSE" | jq -r '.content[0].text')
+          
+          if [ "$AI_COMMENT" = "null" ] || [ -z "$AI_COMMENT" ]; then
+            echo "Error: DeepSeek returned an empty response or error."
+            exit 1
+          fi
+
           curl -s -X POST "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
