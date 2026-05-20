@@ -19,12 +19,14 @@ jobs:
           fetch-depth: 0
 
       - name: Run DeepSeek V4P (Anthropic Mode) Review
-        uses: mtfoley/pr-agent-action@v1
+        # ✅ 这里修正为官方正版的开源插件路径
+        uses: coderabbitai/pr-agent-action@main
         env:
           MODEL_PROVIDER: "anthropic"
           ANTHROPIC_MODEL: "deepseek-v4-pro"
+          # 🔒 动态读取你在 Settings 里存的密钥
           ANTHROPIC_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           ANTHROPIC_BASE_URL: "https://api.deepseek.com/anthropic"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          custom_prompt: "请使用中文，针对这段拉取请求(PR)的代码改动提出深度 Code Review 意见。如果发现逻辑漏洞、Shopify 规范冲突或性能隐患，请直接指出并给出修改后的代码示例。"
+          # 让 AI 强制用中文输出
+          PR_REVIWER.EXTRA_INSTRUCTIONS: "请完全使用中文进行代码审查。指出代码中的 Bug、Shopify 规范冲突或性能隐患，并给出修改后的代码示例。"
