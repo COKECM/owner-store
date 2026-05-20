@@ -18,15 +18,43 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run DeepSeek V4P (Anthropic Mode) Review
-        # ✅ 这里修正为官方正版的开源插件路径
-        uses: coderabbitai/pr-agent-action@main
+      - name: Get PR Diff & Call DeepSeek
         env:
-          MODEL_PROVIDER: "anthropic"
-          ANTHROPIC_MODEL: "deepseek-v4-pro"
-          # 🔒 动态读取你在 Settings 里存的密钥
-          ANTHROPIC_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          ANTHROPIC_BASE_URL: "https://api.deepseek.com/anthropic"
+          # 读取你的 GitHub 密钥和公司 Token
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 让 AI 强制用中文输出
-          PR_REVIWER.EXTRA_INSTRUCTIONS: "请完全使用中文进行代码审查。指出代码中的 Bug、Shopify 规范冲突或性能隐患，并给出修改后的代码示例。"
+        run: |
+          # 1. 抓取这次 PR 改动了哪些代码
+          git diff origin/master...HEAD > pr_diff.txt
+          
+          # 如果没有改动，就直接退出
+          if [ ! -s pr_diff.txt ]; then
+            echo "No code changes found."
+            exit 0
+          fi
+
+          # 2. 用 cURL 按照 Anthropic 格式直接呼叫你们公司的接口
+          # 这里把代码 diff 作为输入直接喂给 DeepSeek V4P
+          RESPONSE=$(curl -s -X POST "https://api.deepseek.com/anthropic/v1/messages" \
+            -H "x-api-key: $DEEPSEEK_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d '{
+              "model": "deepseek-v4-pro",
+              "max_tokens": 2048,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "你是一个拥有15年经验、眼神犀利的资深前端技术专家。请使用中文，针对以下代码改动(Git Diff)提出深度的 Code Review 意见。如果发现逻辑漏洞、Shopify 规范冲突或性能隐患，请直接指出并给出修改后的代码示例：\n\n'"$(cat pr_diff.txt | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')_PRICE_PLACEHOLDER_"'"
+                }
+              ]
+            }')
+
+          # 提取 AI 返回的评论文本
+          AI_COMMENT=$(echo "$RESPONSE" | jq -r '.content[0].text')
+
+          # 3. 将 AI 的审查意见作为评论直接发表在当前 PR 页面上
+          curl -s -X POST "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d "{\"body\": \"### 🤖 DeepSeek-V4P 架构师审查报告：\n\n$AI_COMMENT\"}"
